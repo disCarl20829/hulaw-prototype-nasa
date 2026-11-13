@@ -4,9 +4,9 @@ import { buildSummary, ndviStatus, precipStatus, soilStatus, type Status } from 
 
 const GLYPH: Record<Status, string> = { below: "▼", normal: "•", above: "▲" }; // not colour-only
 
-interface Props { region: Region; index: number; onChange: (i: number) => void }
+interface Props { region: Region; index: number; onChange: (i: number) => void; floating?: boolean }
 
-export default function Timeline({ region, index, onChange }: Props) {
+export default function Timeline({ region, index, onChange, floating = true }: Props) {
   const [playing, setPlaying] = useState(false);
   const last = region.records.length - 1;
 
@@ -23,7 +23,7 @@ export default function Timeline({ region, index, onChange }: Props) {
   ];
 
   return (
-    <section className="timeline panel">
+    <section className={`timeline panel ${floating ? "" : "static"}`}>
       <h2>Drought development and recovery timeline</h2>
       <div className="controls">
         <button onClick={() => setPlaying((p) => !p)}>{playing ? "Pause" : "Play"}</button>

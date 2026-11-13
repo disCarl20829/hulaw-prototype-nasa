@@ -32,3 +32,16 @@ export function buildSummary(records: MonthRecord[], upTo: number): string {
   parts.push(`Latest direction: ${Object.entries(tr).map(([k, v]) => `${k} ${v}`).join(", ")}.`);
   return parts.join(" ");
 }
+
+// Signed scores in [-1, 1]: +1 = extreme dryness signal, -1 = strong wetness signal.
+const clip = (x: number) => Math.max(-1, Math.min(1, x));
+export const precipScore = (mm: number) => clip(-mm / 90);
+export const soilScore = (pct: number) => clip((50 - pct) / 40);
+export const ndviScore = (v: number) => clip(-v / 0.2);
+
+export const THRESHOLDS = {
+  precip: "below baseline if anomaly < -30 mm; above if > +30 mm",
+  soil: "below normal if percentile < 25; above if > 75",
+  ndvi: "below baseline if NDVI anomaly < -0.05; above if > +0.05",
+};
+export const statusFns = { precip: precipStatus, soil: soilStatus, ndvi: ndviStatus };

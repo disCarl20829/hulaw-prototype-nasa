@@ -1,7 +1,7 @@
 import type { Region } from "../types";
 
-// ILLUSTRATIVE PLACEHOLDER VALUES, NOT SATELLITE OBSERVATIONS.
-// Replace with output from GET /api/indicators once the pipeline exists.
+// STATIC ILLUSTRATIVE PLACEHOLDER VALUES, NOT VERIFIED SATELLITE OBSERVATIONS.
+// This local dataset powers the frontend prototype without a backend.
 export const philippines: Region = {
   id: "ph", name: "Philippines", bbox: [116, 4.5, 127, 21.5], isIllustrative: true,
   records: [
@@ -24,12 +24,3 @@ export const philippines: Region = {
     ndvi: { dataset: "NASA MODIS NDVI (product TO CONFIRM)", variable: "NDVI anomaly", unit: "index", baselinePeriod: "TO DEFINE", nativeResolution: "250 m-1 km", limitation: "Also affected by clouds, harvest cycles and land-use change." },
   },
 };
-
-// Illustrative hotspots for the globe; real layers should come from tiles/COGs.
-export const hotspots = [
-  { lon: 105, lat: 16, radiusKm: 450, severity: 0.95 },
-  { lon: 108, lat: 11, radiusKm: 300, severity: 0.8 },
-  { lon: 114, lat: 0, radiusKm: 380, severity: 0.7 },
-  { lon: 100, lat: 8, radiusKm: 260, severity: 0.6 },
-  { lon: 121, lat: 14, radiusKm: 220, severity: 0.45 },
-];
