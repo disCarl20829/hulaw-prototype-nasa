@@ -9,6 +9,7 @@ from app.api.timeline import router as timeline_router
 from app.api.soil_moisture import router as soil_moisture_router
 from app.api.soil_moisture_history import router as smap_history_router
 from app.api.vegetation import router as vegetation_router
+from app.api.hulaworld import router as hulaworld_router
 
 app = FastAPI(
     title="Hulaw World",
@@ -25,6 +26,7 @@ app.include_router(timeline_router) # ("/api/analysis/rainfall/timeline")
 app.include_router(soil_moisture_router) # ("/api/soil-moisture")
 app.include_router(smap_history_router) # ("/api/soil-moisture/history")
 app.include_router(vegetation_router) # ("/api/vegetation")
+app.include_router(hulaworld_router) # ("/api/hulaworld")
 
 @app.get("/")
 def root():

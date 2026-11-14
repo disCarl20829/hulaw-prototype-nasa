@@ -2,4 +2,11 @@ backend/.venv
 frontend/node_modules
 
 backend/data/cache/
-backend/data/smap
+backend/data/smap/
+
+.env
+.env.*
+!.env.example
+**/.venv/
+
+*.log
