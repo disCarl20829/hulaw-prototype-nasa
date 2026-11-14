@@ -52,4 +52,4 @@ websockets==17.4
 wrapt==2.5.2
 yarl==1.25.1
 openai
-python-dotenv
+h5py==3.16.0
