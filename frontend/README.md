@@ -21,8 +21,11 @@ npm run preview
 
 ## Globe interactions
 
-- Click a country polygon to highlight it and show its name and ISO code.
+- Click a bundled country polygon to highlight it and show its name and ISO code.
+- The Esri World Boundaries and Places reference overlay supplies global country borders, administrative boundaries and populated-place/city labels. Labels and boundary detail vary with zoom.
+- Esri World Imagery is requested up to zoom level 19; actual detail depends on regional source coverage and network availability.
 - Use the mouse wheel or trackpad to zoom. Zoom is limited to 150 km minimum and 18,000 km maximum camera distance.
+- Online Esri reference and imagery layers require an internet connection and retain Esri/source attribution.
 - The logo is bundled at `public/hulaw-logo.webp`.
 
 ## Static data

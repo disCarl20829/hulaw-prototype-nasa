@@ -1,15 +1,9 @@
 import { useEffect, useRef } from "react";
 import * as Cesium from "cesium";
 import type { LayerKey, Region } from "../types";
-import { COUNTRY_NAMES, countryScore, scoreColor } from "../data/severity";
+import { countryScore, scoreColor } from "../data/severity";
 
 interface Props { region: Region; layers: Record<LayerKey, boolean>; index: number; selectedIso: string | null; onCountrySelect: (iso: string | null, name: string | null) => void }
-
-// Label anchor points (lon, lat) for the countries we shade.
-const LABEL_AT: Record<string, [number, number]> = {
-  PHL: [122.5, 12.8], VNM: [106.3, 15.2], THA: [101, 15.5], KHM: [104.9, 12.7], LAO: [103.9, 19.2], MMR: [96.5, 21],
-  MYS: [102, 4.2], IDN: [113, -1.5], CHN: [104, 34], TWN: [121, 23.8], IND: [79, 22], BGD: [90.3, 23.9], AUS: [134, -25],
-};
 
 export default function GlobeMap({ region, layers, index, selectedIso, onCountrySelect }: Props) {
   const el = useRef<HTMLDivElement>(null);
@@ -29,10 +23,20 @@ export default function GlobeMap({ region, layers, index, selectedIso, onCountry
     // High-detail satellite imagery (Esri World Imagery; attribution is shown in the footer).
     const esri = v.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
       url: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      maximumLevel: 12,
+      maximumLevel: 19,
       credit: "Imagery © Esri, Maxar, Earthstar Geographics",
     }));
     esri.brightness = 0.85; esri.saturation = 0.9; esri.contrast = 1.05;
+
+    // Global reference overlay: country borders, first/second-level administrative
+    // boundaries, populated places and city labels. The tiled service changes
+    // detail with zoom, avoiding a small hand-maintained list of city coordinates.
+    const reference = v.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+      url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      maximumLevel: 19,
+      credit: "Boundaries and place names © Esri",
+    }));
+    reference.alpha = 0.96;
 
     const s = v.scene;
     s.backgroundColor = Cesium.Color.fromCssColorString("#070b10");
@@ -64,15 +68,6 @@ export default function GlobeMap({ region, layers, index, selectedIso, onCountry
       else onCountrySelect(null, null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-    Object.entries(LABEL_AT).forEach(([iso, [lon, lat]]) => v.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon, lat),
-      label: {
-        text: COUNTRY_NAMES[iso], font: iso === "PHL" ? "600 15px 'IBM Plex Sans', sans-serif" : "500 12px 'IBM Plex Sans', sans-serif",
-        fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK.withAlpha(0.8), outlineWidth: 3,
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE, disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, iso === "PHL" ? 14_000_000 : 11_000_000),
-      },
-    }));
     return () => { clickHandler.destroy(); v.destroy(); };
     // eslint-disable-next-line
   }, []);
