@@ -24,10 +24,19 @@ app = FastAPI(
 # Browser origins allowed to call this API. For a deployed or teammate
 # frontend, set HULAW_CORS_ORIGINS to a comma-separated list of exact origins,
 # for example: HULAW_CORS_ORIGINS=https://hulaw.example.com,http://192.168.1.20:5173
-DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+DEFAULT_ORIGINS = (
+    "https://hulaw.vercel.app,"
+    "http://localhost:5173,"
+    "http://127.0.0.1:5173"
+)
+
 CORS_ORIGINS = [
     origin.strip()
-    for origin in os.getenv("HULAW_CORS_ORIGINS", DEFAULT_ORIGINS).split(",")
+    for origin in os.getenv(
+        "HULAW_CORS_ORIGINS",
+        DEFAULT_ORIGINS
+    ).split(",")
     if origin.strip()
 ]
 
@@ -35,9 +44,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 app.include_router(indicators_router) # ("/api/indicators")
 app.include_router(precipitation_router) # ("/api/precipitation")
