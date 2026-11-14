@@ -1,8 +1,17 @@
-"""NASA POWER daily point data for several parameters in one request."""
+
+"""NASA POWER daily point data with persistent caching and timing logs."""
+import logging
+import time
+
 import httpx
 from fastapi import HTTPException
 
+from app.services.cache_service import cache_get, cache_set
 from app.services.nasa_service import NASA_POWER_URL
+
+logger = logging.getLogger(__name__)
+
+POWER_CACHE_TTL = 30 * 24 * 60 * 60  # 30 days
 
 
 async def get_power_daily(
@@ -17,6 +26,26 @@ async def get_power_daily(
     NASA POWER marks missing days with a negative sentinel (-999).
     Those days are returned as None, never as zero.
     """
+
+    cache_key = (
+        f"power-daily:v1:{latitude:.4f}:{longitude:.4f}:"
+        f"{start}:{end}:{','.join(sorted(parameters))}"
+    )
+
+    cached = cache_get(cache_key, POWER_CACHE_TTL)
+
+    if cached is not None:
+        logger.info(
+            "POWER cache HIT: %s to %s, %s",
+            start, end, parameters
+        )
+        return cached
+
+    logger.info(
+        "POWER cache MISS: %s to %s, %s",
+        start, end, parameters
+    )
+
     params = {
         "parameters": ",".join(parameters),
         "community": "AG",
@@ -27,6 +56,8 @@ async def get_power_daily(
         "format": "JSON",
         "time-standard": "UTC"
     }
+
+    started = time.perf_counter()
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -45,6 +76,13 @@ async def get_power_daily(
             status_code=502,
             detail="Unable to retrieve valid NASA POWER data"
         ) from exc
+
+    elapsed = time.perf_counter() - started
+
+    logger.info(
+        "POWER API completed in %.2f seconds (%s to %s)",
+        elapsed, start, end
+    )
 
     try:
         block = data["properties"]["parameter"]
@@ -75,5 +113,7 @@ async def get_power_daily(
             )
             for day, value in values.items()
         }
+
+    cache_set(cache_key, result)
 
     return result
