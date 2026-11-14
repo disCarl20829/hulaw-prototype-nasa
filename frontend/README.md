@@ -1,6 +1,6 @@
-# Hulaw frontend — static prototype
+# Hulaw frontend - static interactive prototype
 
-This is a frontend-only React/Vite prototype. It runs entirely with local illustrative sample data and does not require a backend, API server, database, or network service.
+This is a frontend-only React/Vite prototype. It uses local illustrative sample data and a bundled country GeoJSON file; no backend, API server, or database is required.
 
 ## Run locally
 
@@ -19,12 +19,14 @@ npm run build
 npm run preview
 ```
 
+## Globe interactions
+
+- Click a country polygon to highlight it and show its name and ISO code.
+- Use the mouse wheel or trackpad to zoom. Zoom is limited to 150 km minimum and 18,000 km maximum camera distance.
+- The logo is bundled at `public/hulaw-logo.webp`.
+
 ## Static data
 
-- `src/data/sampleRegion.ts` contains the illustrative Philippines dataset used by the interface.
-- `public/data/countries.geojson` contains the map geography.
-- All dashboard calculations and summaries are performed in the frontend.
+`src/data/sampleRegion.ts` contains illustrative placeholder values, not verified satellite observations or official drought measurements. Country boundaries are bundled in `public/data/countries.geojson`.
 
-The sample values are placeholders for demonstration only; they are not verified satellite observations or official drought measurements.
-
-No backend or API integration is included. A future backend can be connected later while preserving the current frontend structure.
+No backend or API integration is included. Backend services can be connected later while retaining this frontend.

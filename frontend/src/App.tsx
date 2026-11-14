@@ -16,21 +16,29 @@ export default function App() {
   const route = useHashRoute();
   const [index, setIndex] = useState(region.records.length - 1);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({ combined: true, precip: true, soil: false, ndvi: true });
+  const [selectedCountry, setSelectedCountry] = useState<{ iso: string; name: string } | null>(null);
 
   return (
     <div className="app">
       <header>
-        <h1>Hulaw <span>Global Drought Intelligence</span></h1>
+        <div className="brand">
+          <img src={`${import.meta.env.BASE_URL}hulaw-logo.webp`} alt="Hulaw logo" />
+          <div><h1>Hulaw</h1><span>Global Drought Intelligence</span></div>
+        </div>
         <nav aria-label="Main">
           {ROUTES.map((r) => <a key={r.id} href={`#/${r.id}`} aria-current={route === r.id ? "page" : undefined}>{r.label}</a>)}
         </nav>
       </header>
       <main className={route === "map" ? "map-page" : "scroll-page"}>
         {route === "map" && (<>
-          <GlobeMap region={region} layers={layers} index={index} />
+          <GlobeMap region={region} layers={layers} index={index} selectedIso={selectedCountry?.iso ?? null} onCountrySelect={(iso, name) => setSelectedCountry(iso && name ? { iso, name } : null)} />
           <div className="left">
             <input className="panel search" type="search" placeholder="Search region" aria-label="Search region" />
             <LayerPanel layers={layers} onToggle={(k) => setLayers((l) => ({ ...l, [k]: !l[k] }))} />
+            {selectedCountry && <div className="panel selected-country">
+              <div><span className="note">Selected country</span><strong>{selectedCountry.name}</strong><span className="note">{selectedCountry.iso} · highlighted on globe</span></div>
+              <button type="button" onClick={() => setSelectedCountry(null)}>Clear</button>
+            </div>}
             <div className="panel legend" aria-label="Drought severity legend"><b>Drought severity index</b><div className="ramp" /><span>Extreme drought</span><span>Excess wetness</span></div>
           </div>
           <RegionPanel region={region} upTo={index} />

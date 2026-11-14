@@ -11,7 +11,11 @@ a, button, input { font: inherit; }
 .app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
 
 header { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
-h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; } h1 span { font-weight: 400; color: var(--mute); margin-left: 8px; }
+h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 230px; }
+.brand img { width: 42px; height: 42px; object-fit: contain; }
+.brand > div { display: grid; line-height: 1.25; }
+.brand > div > span { color: var(--mute); font-size: 11px; }
 nav { display: flex; gap: 4px; }
 nav a { color: var(--mute); text-decoration: none; padding: 6px 14px; border-radius: 8px; transition: background .15s, color .15s; }
 nav a:hover { color: var(--text); background: rgba(255,255,255,.05); }
@@ -26,6 +30,10 @@ main.map-page { overflow: hidden; } main.scroll-page { overflow: auto; }
 .left { position: absolute; top: 14px; left: 14px; width: 240px; display: grid; gap: 10px; z-index: 2; }
 .search { width: 100%; color: var(--text); font-size: 13px; }
 .search::placeholder { color: var(--mute); }
+.selected-country { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.selected-country > div { display: grid; min-width: 0; }
+.selected-country strong { font-size: 14px; }
+.selected-country button { padding: 4px 9px; font-size: 11px; flex-shrink: 0; }
 fieldset.panel { margin: 0; } legend { padding: 0 6px; color: var(--mute); font-size: 12px; font-weight: 500; }
 .layers label { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
 input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
@@ -76,7 +84,7 @@ footer .cesium-credit-text, #cesium-credits { text-align: right; } #cesium-credi
   .two, .two.wide { grid-template-columns: 1fr; }
   main.map-page { overflow: auto; } .globe { position: relative; height: 55vh; }
   .region, .left, .timeline { position: static; width: auto; max-height: none; margin: 10px; }
-  .strip { grid-template-columns: 80px repeat(12, 1fr); } header { flex-direction: column; gap: 6px; } nav { flex-wrap: wrap; justify-content: center; }
+  .strip { grid-template-columns: 80px repeat(12, 1fr); } header { flex-direction: column; gap: 8px; } .brand { min-width: 0; } nav { flex-wrap: wrap; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media print { header, footer, button, .btn { display: none; } }

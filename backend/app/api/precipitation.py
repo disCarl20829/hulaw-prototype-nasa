@@ -10,7 +10,6 @@ router = APIRouter(
     tags=["NASA Precipitation"]
 )
 
-
 @router.get("", response_model=PrecipitationResponse)
 async def precipitation(
     latitude: float = Query(..., ge=-90, le=90),

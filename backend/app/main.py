@@ -2,6 +2,9 @@ from fastapi import FastAPI
 
 from app.api.indicators import router as indicators_router
 from app.api.precipitation import router as precipitation_router
+from app.api.rainfall_analysis import router as rainfall_analysis_router
+from app.api.baseline import router as baseline_router
+from app.api.anomaly import router as anomaly_router
 
 app = FastAPI(
     title="Hulaw World",
@@ -11,6 +14,9 @@ app = FastAPI(
 
 app.include_router(indicators_router)
 app.include_router(precipitation_router)
+app.include_router(rainfall_analysis_router)
+app.include_router(baseline_router)
+app.include_router(anomaly_router)
 
 @app.get("/")
 def root():
@@ -24,5 +30,5 @@ def root():
 def health_check():
     return {
         "status": "healthy",
-        "service": "Hulaw World API",
+        "service": "Check healthy-en healthy static",
     }
