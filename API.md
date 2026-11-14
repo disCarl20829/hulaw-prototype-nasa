@@ -24,6 +24,9 @@
 | SMAP single observation | `GET /api/soil-moisture` | Tested |
 | SMAP history | `GET /api/soil-moisture/history` | Tested |
 | MODIS NDVI/EVI history | `GET /api/vegetation/history` | Tested |
+| 12-month drought overview | `GET /api/overview` | Rainfall and soil confirmed live (14 Nov 2026); vegetation depends on the ORNL MODIS service responding |
+| Per-area map series | `POST /api/overview/areas` | Tested with simulated NASA responses only |
+| Hulaworld AI chat | `POST /api/hulaworld/chat` | Needs Azure OpenAI settings in `backend/.env` |
 
 **Interpretation caveats**
 
@@ -55,10 +58,12 @@ app.add_middleware(
         "http://127.0.0.1:5173",
     ],
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 ```
+
+This middleware is now in `backend/app/main.py`. `POST` is allowed for the AI chat and map-series routes. To allow other origins (a deployed frontend, a teammate's machine), set `HULAW_CORS_ORIGINS` in `backend/.env` to a comma-separated list of exact origins instead of editing the code.
 
 For another Vite port, add its exact origin (host + port). No browser API key is required for the currently described read-only routes.
 
@@ -426,6 +431,109 @@ Verified example observations (from the user's successful local test):
 | 2024-02-18 | 0.5291 | 0.3795 | 2116 | valid |
 
 Current `product_version` may be `null`; display “version not supplied” rather than implying a version. **NDVI and EVI are not percentages or direct crop-yield measures.**
+
+### `GET /api/overview`
+
+**Purpose:** the single endpoint the frontend uses for every page. Returns the 12 most recent completed months for one point, with each indicator compared with its own baseline, an experimental combined index, and the mascot mood.  
+**Required query:** `latitude`, `longitude`  
+**Optional query:**
+
+- `end_month=YYYY-MM`: last month of the 12-month window. Must be a completed month, `2007-01` or later. Default: the latest completed month.
+- `baseline_start`, `baseline_end`: baseline years for rainfall and vegetation (send both). 3 to 10 years, starting 2001 or later, ending before the first year of the window. Default: the 5 years before the window.
+- `refresh=true`: ignore cached results and fetch from NASA again.
+
+Invalid period values return `400` with a message. The soil percentile always uses the 20 years before the window.
+
+Example:
+
+```text
+/api/overview?latitude=15.7&longitude=120.9
+```
+
+Sources and methods:
+
+- **Rainfall:** NASA POWER `PRECTOTCORR`, summed per month (complete months only). Baseline is the mean of the same calendar month over the 5 years before the observation window (at least 3 complete years needed).
+- **Soil:** NASA POWER `GWETTOP` surface soil wetness (model-based, 0-1 fraction), monthly mean (at least 20 valid days). Percentile is the rank of that mean among the same calendar month over the 20 years before the window (at least 10 needed). This is **not** SMAP.
+- **Vegetation:** MODIS `MOD13Q1` NDVI from the ORNL DAAC subset API, monthly mean of quality-filtered composites. Baseline is the same calendar month over the same 5 years (at least 3 needed).
+- **Combined index (experimental):** mean of the available signed scores, each clipped to -1..+1: rainfall `-anomaly_mm/90`, soil `(50 - percentile)/40`, vegetation `-anomaly/0.2`. Positive means drier. Missing indicators are skipped, never counted as zero.
+- **Mascot mood** (`latest.mood`): `default` when no index is available, `happy` for index <= 0.1, `moderate` for <= 0.33, `negative` above that. It uses the most recent month that has an index.
+
+Response shape:
+
+```ts
+type Status = "below" | "normal" | "above" | "no_data";
+type Overview = {
+  location: Coordinates;
+  period: { start_month: string; end_month: string; months: number }; // YYYY-MM
+  baseline_period: { start_year: number; end_year: number };
+  soil_reference_period: { start_year: number; end_year: number };
+  records: {
+    month: string; // YYYY-MM
+    rainfall: { observed_mm: number | null; baseline_mm: number | null; anomaly_mm: number | null; percent_departure: number | null; observed_days: number; expected_days: number; valid_baseline_years: number; status: Status };
+    soil: { wetness: number | null; baseline_wetness: number | null; percentile: number | null; valid_days: number; expected_days: number; valid_reference_years: number; status: Status };
+    vegetation: { ndvi: number | null; baseline_ndvi: number | null; anomaly: number | null; composites_valid: number; composites_total: number; valid_baseline_years: number; status: Status };
+    combined: { index: number | null; label: string; indicators_used: string[] };
+  }[];
+  latest: { month: string | null; combined_index: number | null; label: string; mood: "default" | "happy" | "moderate" | "negative" };
+  sources: Record<"precip" | "soil" | "ndvi", { dataset: string; variable: string; unit: string; baseline_period: string; native_resolution: string; limitation: string }>;
+  thresholds: Record<string, string>;
+  warnings: string[]; // months without data, failed upstream requests
+  generated_at: string; // ISO timestamp, UTC
+  cached: boolean;
+  experimental: true;
+  note: string;
+};
+```
+
+Behaviour notes:
+
+- A NASA POWER failure returns `502`. A MODIS failure does **not** fail the request: vegetation values are `null` and `warnings` explains why.
+- Results are cached on disk in `backend/data/cache/api/` (ignored by git): the whole overview for 12 hours, and MODIS composites older than 120 days permanently. The first request for a new location needs about 16 MODIS requests and can take up to a minute; later requests are fast. Delete that folder or pass `refresh=true` to refetch.
+- Values describe one point (the frontend sends the center of the selected area), not an area average.
+
+### `POST /api/overview/areas`
+
+**Purpose:** rainfall anomaly and soil wetness percentile per month for many areas in one call. The map uses it to colour each boundary by its own value.  
+**Body (JSON):**
+
+```ts
+{
+  points: { id: string; latitude: number; longitude: number }[]; // 1 to 150, id is the PSGC code
+  end_month?: string;       // same rules as GET /api/overview
+  baseline_start?: number;
+  baseline_end?: number;
+  refresh?: boolean;
+}
+```
+
+**Response:**
+
+```ts
+{
+  months: string[];           // the 12 months, YYYY-MM
+  baseline_period: { start_year: number; end_year: number };
+  soil_reference_period: { start_year: number; end_year: number };
+  grid_degrees: number;       // 0.25
+  indicators: ["rainfall", "soil"];
+  areas: {
+    id: string; latitude: number; longitude: number; // the snapped point actually read
+    status: "ok" | "error";
+    rainfall_anomaly_mm: (number | null)[];          // one value per month
+    soil_percentile: (number | null)[];
+  }[];
+  failed: number;
+  note: string;
+}
+```
+
+Notes: each point is snapped to a 0.25 degree grid so neighbouring areas share one NASA POWER request, with up to 4 requests at a time. Results are cached for 7 days. Vegetation is not included because it needs many slow requests per point. A point whose request fails has `status: "error"` and `null` values; the call itself still returns `200`.
+
+### `POST /api/hulaworld/chat`
+
+**Purpose:** AI assistant reply for the chat panel.  
+**Body (JSON):** `{ "message": string (1-1000 chars), "latitude"?: number, "longitude"?: number }`. Latitude and longitude must be sent together.  
+**Response:** `{ "agent": string, "reply": string, "tools_used": string[] }`  
+**Errors:** `503` when the Azure OpenAI settings are missing, `502` when the AI provider fails, `400`/`422` for invalid input.
 
 ## 5. Frontend data-display rules
 
