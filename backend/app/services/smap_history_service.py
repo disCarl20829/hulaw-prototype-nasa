@@ -74,6 +74,10 @@ def calculate_soil_moisture_history(
             "days_valid": len(valid),
             "days_missing_file": missing_files,
             "days_missing_retrieval": missing_retrievals,
+            "days_pending": sum(
+                1 for item in observations
+                if item["status"] == "pending"
+            ),
             "am_retrievals": am_count,
             "pm_retrievals": pm_count
         },

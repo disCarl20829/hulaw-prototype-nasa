@@ -1,3 +1,4 @@
+import asyncio
 from calendar import monthrange
 
 from app.services.nasa_service import get_precipitation
@@ -43,34 +44,28 @@ async def calculate_rainfall_timeline(
     baseline_start: int,
     baseline_end: int
 ):
-    # Fetch the selected observation period once.
-    observed_data = await get_precipitation(
-        latitude=latitude,
-        longitude=longitude,
-        start=f"{year}{start_month:02d}01",
-        end=(
-            f"{year}{end_month:02d}"
-            f"{monthrange(year, end_month)[1]:02d}"
-        )
-    )
+    # Fetch the observation period and every baseline year at the same
+    # time, a few requests at once, instead of one after another.
+    semaphore = asyncio.Semaphore(4)
 
-    # Fetch each historical baseline year once.
-    historical_data = {}
-
-    for baseline_year in range(
-        baseline_start, baseline_end + 1
-    ):
-        historical_data[baseline_year] = (
-            await get_precipitation(
+    async def fetch_year(target_year: int):
+        async with semaphore:
+            return await get_precipitation(
                 latitude=latitude,
                 longitude=longitude,
-                start=f"{baseline_year}{start_month:02d}01",
+                start=f"{target_year}{start_month:02d}01",
                 end=(
-                    f"{baseline_year}{end_month:02d}"
-                    f"{monthrange(baseline_year, end_month)[1]:02d}"
+                    f"{target_year}{end_month:02d}"
+                    f"{monthrange(target_year, end_month)[1]:02d}"
                 )
             )
-        )
+
+    baseline_range = list(range(baseline_start, baseline_end + 1))
+    observed_data, *baseline_results = await asyncio.gather(
+        fetch_year(year),
+        *(fetch_year(item) for item in baseline_range)
+    )
+    historical_data = dict(zip(baseline_range, baseline_results))
 
     timeline = []
 

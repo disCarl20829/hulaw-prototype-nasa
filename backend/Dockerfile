@@ -4,6 +4,8 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Load the default overview into the cache right after start-up.
+ENV HULAW_PREWARM=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

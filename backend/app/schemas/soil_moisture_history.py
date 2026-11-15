@@ -14,6 +14,7 @@ class SoilMoistureHistorySummary(BaseModel):
     days_valid: int
     days_missing_file: int
     days_missing_retrieval: int
+    days_pending: int = 0  # file is being downloaded; ask again later
     am_retrievals: int
     pm_retrievals: int
 

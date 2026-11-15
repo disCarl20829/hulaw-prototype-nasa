@@ -60,3 +60,19 @@ The tests replace the NASA services with small fakes, so they run offline. `pyte
 ## Not built yet
 
 SMAP-based soil moisture with a baseline, an agricultural exposure overlay, area-averaged values, deployment, and scientific validation of the thresholds and the combined index.
+
+## Deployment
+
+| Part | Host | Notes |
+|---|---|---|
+| Frontend | Vercel, root directory `frontend/` | `VITE_API_BASE_URL=https://hulaw-prototype-nasa.onrender.com`. The root `vercel.json` is not used with this root directory. |
+| Backend | Render (Docker, `backend/Dockerfile`) | Health check path `/api/health`. Azure OpenAI variables are set in the Render dashboard. |
+
+Backend environment variables (all optional):
+
+- `HULAW_CORS_ORIGINS` - comma-separated exact origins. Default: `hulaw.earth`, `www.hulaw.earth`, `hulaw.vercel.app` and local Vite.
+- `HULAW_CORS_ORIGIN_REGEX` - pattern for changing origins such as Vercel previews.
+- `HULAW_CACHE_DIR` - folder for the NASA cache. Point it at a persistent disk on a paid plan.
+- `HULAW_PREWARM=1` - load the default overview at start-up (set in the Dockerfile).
+
+On Render's free plan the instance sleeps when idle and loses its cache. `.github/workflows/keep-warm.yml` pings `/api/health` every 10 minutes to prevent that.

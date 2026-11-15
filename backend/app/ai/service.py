@@ -38,6 +38,10 @@ NASA TOOL RULES:
 - Rainfall deficits alone do not establish drought.
 - Vegetation greenness alone does not establish health.
 - Keep the final explanation concise.
+- If a soil moisture observation has status "pending", its SMAP file
+  (about 650 MB per day) is still being downloaded from NASA. Say so,
+  say it usually takes several minutes, and ask the user to repeat the
+  question later. Do not describe pending data as unavailable.
 """
 
 

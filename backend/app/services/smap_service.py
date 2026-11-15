@@ -2,8 +2,8 @@ from datetime import date
 from pathlib import Path
 import re
 
-import h5py
-import numpy as np
+from app.services import smap_fetch_service
+from app.services.cache_service import cache_get, cache_set
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SMAP_DIR = BASE_DIR / "data" / "smap"
@@ -30,12 +30,79 @@ def find_smap_file(observation_date: date):
     return matches[0] if matches else None
 
 
+PENDING_NOTE = (
+    "The SMAP file for this date (about 650 MB) is being downloaded "
+    "from NASA. This usually takes several minutes. Ask again shortly."
+)
+
+
 def extract_soil_moisture(
     latitude: float,
     longitude: float,
     observation_date: date
 ):
+    """Soil moisture at one point on one day.
+
+    With on-demand downloads enabled (see smap_fetch_service), a missing
+    file is fetched in the background and the answer is "pending" until it
+    arrives. Extracted values are cached, so they outlive the file.
+    """
     filepath = find_smap_file(observation_date)
+    cache_key = (
+        f"smap-point:v1:{latitude:.4f}:{longitude:.4f}:"
+        f"{observation_date.isoformat()}"
+    )
+
+    if filepath is None:
+        if smap_fetch_service.enabled():
+            cached = cache_get(cache_key)
+
+            if cached is not None:
+                return cached
+
+        result = _extract_from_file(
+            None, latitude, longitude, observation_date
+        )
+        job = smap_fetch_service.request_file(
+            observation_date, latitude, longitude
+        )
+
+        if job["state"] in {"queued", "downloading"}:
+            result["status"] = "pending"
+            result["note"] = PENDING_NOTE
+        elif job["state"] == "busy":
+            result["note"] = (
+                "Too many SMAP files are already being downloaded. "
+                "Ask again in a few minutes."
+            )
+        elif job["state"] == "unavailable":
+            result["note"] = (
+                "NASA has no SMAP SPL3SMP_E version 006 file for this date."
+            )
+        elif job["state"] == "failed":
+            result["note"] = (
+                "The SMAP file for this date could not be downloaded "
+                f"({job['error']}). It will be tried again later."
+            )
+
+        return result
+
+    result = _extract_from_file(
+        filepath, latitude, longitude, observation_date
+    )
+
+    if smap_fetch_service.enabled():
+        cache_set(cache_key, result)
+
+    return result
+
+
+def _extract_from_file(
+    filepath,
+    latitude: float,
+    longitude: float,
+    observation_date: date
+):
 
     result = {
         "source": "NASA NSIDC",
@@ -62,6 +129,12 @@ def extract_soil_moisture(
             "No downloaded SMAP file exists for this date."
         )
         return result
+
+    # Imported here, not at module level: these are large libraries and are
+    # only needed when a SMAP file is actually present. A host without the
+    # files (the deployed API) then starts faster and uses less memory.
+    import h5py
+    import numpy as np
 
     retrieval_groups = [
         ("AM", "Soil_Moisture_Retrieval_Data_AM", ""),

@@ -25,7 +25,7 @@ class SoilMoistureResponse(BaseModel):
     distance_km: float | None
     retrieval_period: Literal["AM", "PM"] | None
 
-    status: Literal["valid", "no_data"]
+    status: Literal["valid", "no_data", "pending"]
 
     filename: str | None
     note: str

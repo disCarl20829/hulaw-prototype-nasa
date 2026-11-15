@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.schemas.overview import (
     AreaSeriesRequest,
@@ -15,6 +15,7 @@ router = APIRouter(
 
 @router.get("", response_model=OverviewResponse)
 async def overview(
+    response: Response,
     latitude: float = Query(..., ge=-90, le=90),
     longitude: float = Query(..., ge=-180, le=180),
     end_month: str | None = Query(
@@ -33,7 +34,7 @@ async def overview(
     """12 completed months of rainfall, soil wetness and vegetation for
     one point, each compared with its own baseline, plus an experimental
     combined index."""
-    return await build_overview(
+    result = await build_overview(
         latitude=latitude,
         longitude=longitude,
         refresh=refresh,
@@ -41,6 +42,19 @@ async def overview(
         baseline_start=baseline_start,
         baseline_end=baseline_end
     )
+
+    # Completed months do not change, so the browser may reuse a complete
+    # answer for a few minutes (page reloads, switching back to an area).
+    # A result with a failed NASA request is never reused.
+    complete = not any(
+        "failed" in item or "could not" in item
+        for item in result["warnings"]
+    )
+    response.headers["Cache-Control"] = (
+        "private, max-age=600" if complete and not refresh else "no-store"
+    )
+
+    return result
 
 
 @router.post("/areas", response_model=AreaSeriesResponse)

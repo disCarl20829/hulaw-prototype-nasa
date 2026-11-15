@@ -7,7 +7,8 @@ import { fetchAreaSeries, type AreaSeries } from "../services/hulaw-api";
 
 export interface AreaSelection { code: string; name: string; level: "Region" | "Province" | "City / Municipality"; parentCode?: string; center?: { latitude: number; longitude: number } }
 interface Props { region: Region; layers: Record<LayerKey, boolean>; index: number; query: DataQuery; selectedArea: AreaSelection | null; onAreaSelect: (area: AreaSelection | null) => void }
-const DATA = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/latest/geojson";
+// Pinned to one commit so an upstream change to the boundary files cannot break the map.
+const DATA = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/680e32e62baeccbcd8845d3b1387bc67c1baf78a/latest/geojson";
 const property = (entity: Cesium.Entity, key: string) => entity.properties?.[key]?.getValue() as string | number | undefined;
 const cleanName = (value: unknown) => String(value ?? "Selected area").replace(/\s+/g, " ").trim();
 const GOLD = Cesium.Color.fromCssColorString("#ffd45e");

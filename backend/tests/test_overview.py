@@ -295,3 +295,146 @@ def test_power_failure_is_a_502(calls, monkeypatch):
         run()
 
     assert error.value.status_code == 502
+
+
+def test_modis_blocks_are_reused_across_periods(calls):
+    run()
+    before = calls["subset"]
+
+    # A different end month overlaps almost all of the same composites, so
+    # only a block that was not needed before may be downloaded.
+    run(end_month="2026-07")
+    assert calls["subset"] - before <= 1
+
+
+def test_concurrent_identical_requests_share_one_load(calls):
+    async def burst():
+        return await asyncio.gather(*(
+            ov.build_overview(15.7, 120.9, today=TODAY) for _ in range(4)
+        ))
+
+    results = asyncio.run(burst())
+
+    assert calls["power"] == 1 and calls["dates"] == 1
+    assert all(len(result["records"]) == 12 for result in results)
+
+
+def test_cached_result_is_a_private_copy(calls):
+    run()
+    first = run()
+    first["records"].clear()
+
+    assert len(run()["records"]) == 12
+
+
+def test_production_origin_is_allowed_and_old_cache_is_pruned(calls, tmp_path):
+    client = TestClient(app)
+    response = client.get("/api/health", headers={"Origin": "https://hulaw.earth"})
+    assert response.headers["access-control-allow-origin"] == "https://hulaw.earth"
+    blocked = client.get("/api/health", headers={"Origin": "https://example.com"})
+    assert "access-control-allow-origin" not in blocked.headers
+
+    import os
+    old, new = tmp_path / "old.json", tmp_path / "new.json"
+    old.write_text("{}"), new.write_text("{}")
+    os.utime(old, (0, 0))
+    assert cache_service.cache_prune() == 1
+    assert new.exists() and not old.exists()
+
+
+def test_smap_is_downloaded_in_the_background(tmp_path, monkeypatch):
+    """With on-demand SMAP enabled: first answer is 'pending', then the
+    value, and the value survives after the file is removed."""
+    import time
+    import types
+
+    h5py = pytest.importorskip("h5py")
+    np = pytest.importorskip("numpy")
+
+    import app.services.smap_fetch_service as fetch
+    import app.services.smap_service as smap
+
+    smap_dir = tmp_path / "smap"
+    monkeypatch.setattr(cache_service, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(smap, "SMAP_DIR", smap_dir)
+    monkeypatch.setenv("HULAW_SMAP_ON_DEMAND", "1")
+    monkeypatch.setenv("EARTHDATA_USERNAME", "user")
+    monkeypatch.setenv("EARTHDATA_PASSWORD", "secret")
+    fetch._jobs.clear()
+    fetch._queue.clear()
+    downloads = []
+
+    def download(results, local_path):
+        day = results[0]
+        downloads.append(day)
+        time.sleep(0.2)
+        path = Path(local_path) / f"SMAP_L3_SM_P_E_{day.replace('-', '')}_R19240_001.h5"
+
+        with h5py.File(path, "w") as handle:
+            group = handle.create_group("Soil_Moisture_Retrieval_Data_AM")
+            group["latitude"] = np.array([[15.7, 15.8]], dtype="f4")
+            group["longitude"] = np.array([[120.9, 121.0]], dtype="f4")
+            group["soil_moisture"] = np.array([[0.31, 0.5]], dtype="f4")
+            group["retrieval_qual_flag"] = np.array([[0, 0]], dtype="u2")
+
+        return [str(path)]
+
+    fake = types.SimpleNamespace(
+        login=lambda strategy: types.SimpleNamespace(authenticated=True),
+        search_data=lambda short_name, version, temporal, count: (
+            [] if temporal[0] == "2024-02-01" else [temporal[0]]
+        ),
+        download=download,
+    )
+    monkeypatch.setitem(sys.modules, "earthaccess", fake)
+
+    client = TestClient(app)
+    params = {"latitude": 15.7, "longitude": 120.9, "observation_date": "2024-01-16"}
+
+    first = client.get("/api/soil-moisture", params=params).json()
+    assert first["status"] == "pending" and "650 MB" in first["note"]
+    assert client.get("/api/soil-moisture", params=params).json()["status"] == "pending"
+
+    def wait_for(day):
+        for _ in range(100):
+            if day not in fetch._jobs or fetch._jobs[day]["state"] not in {"queued", "downloading"}:
+                return
+            time.sleep(0.05)
+        raise AssertionError("download did not finish")
+
+    wait_for(date(2024, 1, 16))
+    ready = client.get("/api/soil-moisture", params=params).json()
+    assert ready["status"] == "valid" and ready["soil_moisture"] == 0.31
+    assert downloads == ["2024-01-16"]  # the repeated request did not download twice
+
+    # The file is gone (evicted), the extracted value is still served.
+    for path in smap_dir.glob("*.h5"):
+        path.unlink()
+    again = client.get("/api/soil-moisture", params=params).json()
+    assert again["status"] == "valid" and again["soil_moisture"] == 0.31
+    assert downloads == ["2024-01-16"]
+
+    # A date NASA has no file for is reported as such, not as pending forever.
+    params["observation_date"] = "2024-02-01"
+    client.get("/api/soil-moisture", params=params)
+    wait_for(date(2024, 2, 1))
+    missing = client.get("/api/soil-moisture", params=params).json()
+    assert missing["status"] == "no_data" and "no SMAP" in missing["note"]
+
+    history = client.get("/api/soil-moisture/history", params={
+        "latitude": 15.7, "longitude": 120.9,
+        "start_date": "2024-01-16", "end_date": "2024-01-18",
+    }).json()
+    assert history["summary"]["days_valid"] == 1
+    assert history["summary"]["days_pending"] == 2
+    wait_for(date(2024, 1, 17)), wait_for(date(2024, 1, 18))
+    assert len(list(smap_dir.glob("*.h5"))) <= 2  # HULAW_SMAP_MAX_FILES default
+
+
+def test_smap_without_on_demand_is_unchanged(monkeypatch):
+    monkeypatch.delenv("HULAW_SMAP_ON_DEMAND", raising=False)
+    response = TestClient(app).get("/api/soil-moisture", params={
+        "latitude": 15.7, "longitude": 120.9, "observation_date": "2001-01-01",
+    }).json()
+    assert response["status"] == "no_data"
+    assert response["note"] == "No downloaded SMAP file exists for this date."

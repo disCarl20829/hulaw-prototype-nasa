@@ -15,10 +15,10 @@ import logging
 from calendar import monthrange
 from datetime import date, datetime, timezone
 
-import httpx
 from fastapi import HTTPException
 
-from app.services.cache_service import cache_get, cache_set
+from app.services.cache_service import cache_get, cache_set, single_flight
+from app.services.http_client import get_client
 from app.services.modis_service import (
     BASE_URL as MODIS_URL,
     PRODUCT as MODIS_PRODUCT,
@@ -288,30 +288,23 @@ async def modis_get(client, url: str, params: dict, attempts: int = 2):
 def plan_modis_chunks(
     available: list[str], wanted: set[str]
 ) -> list[list[str]]:
-    """Group wanted composite dates into runs that are consecutive in the
-    provider's date list and at most MODIS_CHUNK long, so each subset
-    request stays inside the ORNL limit."""
-    chunks: list[list[str]] = []
-    current: list[str] = []
-    previous_index = None
+    """Split the provider's date list into fixed blocks of MODIS_CHUNK
+    consecutive composites (the ORNL limit per subset request) and keep the
+    blocks that contain a wanted date.
 
-    for index, modis_date in enumerate(available):
-        if modis_date not in wanted:
-            continue
+    The block boundaries depend only on the provider's list, never on the
+    requested period. A block fetched for one period or baseline is therefore
+    reused from the cache for every other one, instead of being downloaded
+    again under a different start and end date."""
+    blocks = (
+        available[index:index + MODIS_CHUNK]
+        for index in range(0, len(available), MODIS_CHUNK)
+    )
 
-        consecutive = previous_index is not None and index == previous_index + 1
-
-        if current and (not consecutive or len(current) >= MODIS_CHUNK):
-            chunks.append(current)
-            current = []
-
-        current.append(modis_date)
-        previous_index = index
-
-    if current:
-        chunks.append(current)
-
-    return chunks
+    return [
+        block for block in blocks
+        if any(modis_date in wanted for modis_date in block)
+    ]
 
 
 async def fetch_ndvi_composites(
@@ -326,112 +319,112 @@ async def fetch_ndvi_composites(
     point = f"{latitude:.4f}_{longitude:.4f}"
     by_month: dict[tuple[int, int], dict] = {}
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        dates_key = f"modis-dates:{MODIS_PRODUCT}:{point}"
-        dates_response = (
-            None if refresh else cache_get(dates_key, MODIS_RECENT_TTL)
+    client = get_client()
+    dates_key = f"modis-dates:{MODIS_PRODUCT}:{point}"
+    dates_response = (
+        None if refresh else cache_get(dates_key, MODIS_RECENT_TTL)
+    )
+
+    if dates_response is None:
+        dates_response, reason = await modis_get(
+            client,
+            f"{MODIS_URL}/{MODIS_PRODUCT}/dates",
+            {"latitude": latitude, "longitude": longitude},
         )
 
         if dates_response is None:
-            dates_response, reason = await modis_get(
-                client,
-                f"{MODIS_URL}/{MODIS_PRODUCT}/dates",
-                {"latitude": latitude, "longitude": longitude},
-            )
+            logger.warning("MODIS date list failed: %s", reason)
+            return {}, [
+                "Vegetation: the MODIS date list could not be retrieved "
+                f"({reason}); NDVI is shown as no data."
+            ]
 
-            if dates_response is None:
-                logger.warning("MODIS date list failed: %s", reason)
-                return {}, [
-                    "Vegetation: the MODIS date list could not be retrieved "
-                    f"({reason}); NDVI is shown as no data."
-                ]
+        cache_set(dates_key, dates_response)
 
-            cache_set(dates_key, dates_response)
+    entries = (
+        dates_response.get("dates", [])
+        if isinstance(dates_response, dict)
+        else dates_response if isinstance(dates_response, list) else []
+    )
 
-        entries = (
-            dates_response.get("dates", [])
-            if isinstance(dates_response, dict)
-            else dates_response if isinstance(dates_response, list) else []
+    available: list[str] = []
+
+    for entry in entries:
+        modis_date = entry.get("modis_date") if isinstance(entry, dict) else None
+
+        if not modis_date:
+            continue
+
+        try:
+            modis_to_date(modis_date)
+        except ValueError:
+            continue
+
+        available.append(modis_date)
+
+    available = sorted(set(available))
+    wanted = {
+        item for item in available
+        if (modis_to_date(item).year, modis_to_date(item).month)
+        in wanted_months
+    }
+
+    if not wanted:
+        return {}, [
+            f"Vegetation: {MODIS_PRODUCT} has no composites for the "
+            "requested months at this location."
+        ]
+
+    semaphore = asyncio.Semaphore(MODIS_CONCURRENCY)
+
+    async def load_chunk(chunk: list[str]) -> list[dict] | None:
+        key = f"modis-subset:v2:{MODIS_PRODUCT}:{point}:{chunk[0]}:{chunk[-1]}"
+        settled = (today - modis_to_date(chunk[-1])).days > MODIS_SETTLED_DAYS
+        cached = (
+            None if refresh
+            else cache_get(key, None if settled else MODIS_RECENT_TTL)
         )
 
-        available: list[str] = []
+        if cached is not None:
+            return cached
 
-        for entry in entries:
-            modis_date = entry.get("modis_date") if isinstance(entry, dict) else None
-
-            if not modis_date:
-                continue
-
-            try:
-                modis_to_date(modis_date)
-            except ValueError:
-                continue
-
-            available.append(modis_date)
-
-        available = sorted(set(available))
-        wanted = {
-            item for item in available
-            if (modis_to_date(item).year, modis_to_date(item).month)
-            in wanted_months
-        }
-
-        if not wanted:
-            return {}, [
-                f"Vegetation: {MODIS_PRODUCT} has no composites for the "
-                "requested months at this location."
-            ]
-
-        semaphore = asyncio.Semaphore(MODIS_CONCURRENCY)
-
-        async def load_chunk(chunk: list[str]) -> list[dict] | None:
-            key = f"modis-subset:{MODIS_PRODUCT}:{point}:{chunk[0]}:{chunk[-1]}"
-            settled = (today - modis_to_date(chunk[-1])).days > MODIS_SETTLED_DAYS
-            cached = (
-                None if refresh
-                else cache_get(key, None if settled else MODIS_RECENT_TTL)
+        async with semaphore:
+            subset, reason = await modis_get(
+                client,
+                f"{MODIS_URL}/{MODIS_PRODUCT}/subset",
+                {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "startDate": chunk[0],
+                    "endDate": chunk[-1],
+                    "kmAboveBelow": 0,
+                    "kmLeftRight": 0,
+                },
             )
 
-            if cached is not None:
-                return cached
+            try:
+                if subset is None:
+                    raise ValueError(reason)
 
-            async with semaphore:
-                subset, reason = await modis_get(
-                    client,
-                    f"{MODIS_URL}/{MODIS_PRODUCT}/subset",
-                    {
-                        "latitude": latitude,
-                        "longitude": longitude,
-                        "startDate": chunk[0],
-                        "endDate": chunk[-1],
-                        "kmAboveBelow": 0,
-                        "kmLeftRight": 0,
-                    },
+                observations = extract_center_pixel(subset)
+            except (KeyError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "MODIS subset %s..%s failed: %s",
+                    chunk[0], chunk[-1], exc
                 )
+                return None
 
-                try:
-                    if subset is None:
-                        raise ValueError(reason)
+        observations = [
+            {"modis_date": item["modis_date"], "ndvi": item["ndvi"]}
+            for item in observations
+            if item["modis_date"] in chunk
+        ]
+        cache_set(key, observations)
 
-                    observations = extract_center_pixel(subset)
-                except (KeyError, TypeError, ValueError) as exc:
-                    logger.warning(
-                        "MODIS subset %s..%s failed: %s",
-                        chunk[0], chunk[-1], exc
-                    )
-                    return None
+        return observations
 
-            observations = [
-                {"modis_date": item["modis_date"], "ndvi": item["ndvi"]}
-                for item in observations
-                if item["modis_date"] in chunk
-            ]
-            cache_set(key, observations)
-
-            return observations
-
-        chunks = plan_modis_chunks(available, wanted)
-        results = await asyncio.gather(*(load_chunk(chunk) for chunk in chunks))
+    chunks = plan_modis_chunks(available, wanted)
+    results = await asyncio.gather(*(load_chunk(chunk) for chunk in chunks))
 
     failed = sum(1 for result in results if result is None)
 
@@ -443,6 +436,9 @@ async def fetch_ndvi_composites(
 
     for result in results:
         for item in result or []:
+            if item["modis_date"] not in wanted:
+                continue  # rest of a fixed block, outside the request
+
             day = modis_to_date(item["modis_date"])
             bucket = by_month.setdefault(
                 (day.year, day.month), {"values": [], "total": 0}
@@ -591,6 +587,38 @@ async def build_overview(
 ) -> dict:
     today = today or date.today()
     window = resolve_window(today, end_month, baseline_start, baseline_end)
+    cache_key = f"overview:v2:{latitude:.3f}:{longitude:.3f}:{window['tag']}"
+
+    if refresh:
+        return await _compute_overview(
+            latitude, longitude, True, today, window, cache_key
+        )
+
+    cached = cache_get(cache_key, OVERVIEW_TTL)
+
+    if cached is not None:
+        cached["cached"] = True
+        return cached
+
+    # Identical requests that arrive while this one is still loading (a
+    # reload, a second visitor, the start-up warm-up) wait for the same
+    # NASA calls instead of repeating them.
+    return await single_flight(
+        cache_key,
+        lambda: _compute_overview(
+            latitude, longitude, False, today, window, cache_key
+        ),
+    )
+
+
+async def _compute_overview(
+    latitude: float,
+    longitude: float,
+    refresh: bool,
+    today: date,
+    window: dict,
+    cache_key: str,
+) -> dict:
     months = window["months"]
     first_year, first_month = months[0]
     last_year, last_month = months[-1]
@@ -599,15 +627,6 @@ async def build_overview(
     soil_start = window["soil_start"]
     baseline_years = range(baseline_start, baseline_end + 1)
     soil_years = range(soil_start, window["soil_end"] + 1)
-
-    cache_key = f"overview:v2:{latitude:.3f}:{longitude:.3f}:{window['tag']}"
-
-    if not refresh:
-        cached = cache_get(cache_key, OVERVIEW_TTL)
-
-        if cached is not None:
-            cached["cached"] = True
-            return cached
 
     wanted_ndvi_months = set(months) | {
         (year, month)

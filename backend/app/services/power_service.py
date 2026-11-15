@@ -6,7 +6,8 @@ import time
 import httpx
 from fastapi import HTTPException
 
-from app.services.cache_service import cache_get, cache_set
+from app.services.cache_service import cache_get, cache_set, single_flight
+from app.services.http_client import get_client
 from app.services.nasa_service import NASA_POWER_URL
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,23 @@ async def get_power_daily(
         start, end, parameters
     )
 
+    # Concurrent requests for the same point share one NASA call.
+    return await single_flight(
+        cache_key,
+        lambda: _fetch_power_daily(
+            cache_key, latitude, longitude, start, end, parameters
+        ),
+    )
+
+
+async def _fetch_power_daily(
+    cache_key: str,
+    latitude: float,
+    longitude: float,
+    start: str,
+    end: str,
+    parameters: list[str]
+) -> dict[str, dict[str, float | None]]:
     params = {
         "parameters": ",".join(parameters),
         "community": "AG",
@@ -60,10 +78,11 @@ async def get_power_daily(
     started = time.perf_counter()
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.get(NASA_POWER_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
+        response = await get_client().get(
+            NASA_POWER_URL, params=params, timeout=120.0
+        )
+        response.raise_for_status()
+        data = response.json()
 
     except httpx.HTTPStatusError as exc:
         raise HTTPException(

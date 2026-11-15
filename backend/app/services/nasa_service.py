@@ -1,6 +1,8 @@
 import httpx
 from fastapi import HTTPException
 
+from app.services.http_client import get_client
+
 NASA_POWER_URL = (
     "https://power.larc.nasa.gov/"
     "api/temporal/daily/point"
@@ -24,13 +26,13 @@ async def get_precipitation(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.get(
-                NASA_POWER_URL,
-                params=params
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await get_client().get(
+            NASA_POWER_URL,
+            params=params,
+            timeout=45.0
+        )
+        response.raise_for_status()
+        data = response.json()
 
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
