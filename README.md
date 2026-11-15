@@ -57,8 +57,6 @@ python -m pytest tests -q
 
 The tests replace the NASA services with small fakes, so they run offline. `pytest` is not in `requirements.txt`; install it with `pip install pytest`.
 
-## Not built yet
-
 SMAP-based soil moisture with a baseline, an agricultural exposure overlay, area-averaged values, deployment, and scientific validation of the thresholds and the combined index.
 
 ## Deployment
@@ -69,6 +67,14 @@ SMAP-based soil moisture with a baseline, an agricultural exposure overlay, area
 | Backend | Render (Docker, `backend/Dockerfile`) | Health check path `/api/health`. Azure OpenAI variables are set in the Render dashboard. |
 
 Backend environment variables (all optional):
+
+## Environment Variables
+- HULAWORLD_PROVIDER
+- AZURE_OPENAI_BASE_URL
+- AZURE_OPENAI_API_KEY
+- AZURE_OPENAI_DEPLOYMENT
+- EARTHDATA_USERNAME
+- EARTHDATA_PASSWORD!
 
 - `HULAW_CORS_ORIGINS` - comma-separated exact origins. Default: `hulaw.earth`, `www.hulaw.earth`, `hulaw.vercel.app` and local Vite.
 - `HULAW_CORS_ORIGIN_REGEX` - pattern for changing origins such as Vercel previews.
