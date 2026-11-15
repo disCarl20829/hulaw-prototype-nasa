@@ -35,6 +35,14 @@ async def get_json(
         response.raise_for_status()
         return response.json()
 
+    except httpx.HTTPStatusError as exc:
+        # Keep the status code: 429 means we are being rate limited,
+        # 5xx means the ORNL service itself is failing.
+        raise HTTPException(
+            status_code=502,
+            detail=f"NASA MODIS returned HTTP {exc.response.status_code}"
+        ) from exc
+
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
             status_code=502,

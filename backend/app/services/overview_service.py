@@ -269,6 +269,23 @@ def monthly_soil(daily: dict, year: int, month: int) -> dict:
 
 # ------------------------------------------------------------------ MODIS
 
+_modis_slots: dict[int, asyncio.Semaphore] = {}
+
+
+def modis_slots() -> asyncio.Semaphore:
+    """One limit on MODIS requests for the whole server. A limit per
+    visitor multiplies with every extra visitor and gets the server rate
+    limited by ORNL."""
+    loop = asyncio.get_running_loop()
+    slots = _modis_slots.get(id(loop))
+
+    if slots is None:
+        _modis_slots.clear()  # an earlier event loop is gone
+        slots = _modis_slots[id(loop)] = asyncio.Semaphore(MODIS_CONCURRENCY)
+
+    return slots
+
+
 async def modis_get(client, url: str, params: dict, attempts: int = 2):
     """get_json with one retry. Returns (data, None) or (None, reason)."""
     reason = "unknown error"
@@ -375,7 +392,7 @@ async def fetch_ndvi_composites(
             "requested months at this location."
         ]
 
-    semaphore = asyncio.Semaphore(MODIS_CONCURRENCY)
+    semaphore = modis_slots()
 
     async def load_chunk(chunk: list[str]) -> list[dict] | None:
         key = f"modis-subset:v2:{MODIS_PRODUCT}:{point}:{chunk[0]}:{chunk[-1]}"
