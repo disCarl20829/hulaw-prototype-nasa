@@ -4,6 +4,7 @@
 **Backend:** Python / FastAPI (`backend/app/main.py`, app title "Hulaw World", version 0.1.0)  
 **Frontend:** React + TypeScript (Vite), CesiumJS globe, Recharts charts  
 **Local API:** `http://127.0.0.1:8000`  
+**Deployed frontend:** `https://hulaw.earth` (Vercel)  
 **Deployed API:** `https://hulaw-prototype-nasa.onrender.com` (Render, Docker)  
 **Interactive API docs:** `/docs` · **Machine-readable schema:** `/openapi.json`
 

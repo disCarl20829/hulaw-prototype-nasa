@@ -38,7 +38,7 @@ BACKEND (Python 3.14, FastAPI):
 - Offline tests in backend/tests/ with fake NASA services.
 
 DEPLOYMENT:
-- Frontend on Vercel (the backend allows the hulaw.earth and hulaw.vercel.app origins by default); backend on Render (Docker) at hulaw-prototype-nasa.onrender.com, kept awake by a GitHub Actions ping.
+- Frontend on Vercel at https://hulaw.earth (also hulaw.vercel.app); backend on Render (Docker) at hulaw-prototype-nasa.onrender.com, kept awake by a GitHub Actions ping.
 
 NOT BUILT: GPM IMERG, GRACE-FO, ECOSTRESS, SMAP baseline/anomaly, area-averaged values, agricultural exposure overlay, gridded raster layers, region comparison, alerts, predictive models, PostgreSQL/PostGIS.
 

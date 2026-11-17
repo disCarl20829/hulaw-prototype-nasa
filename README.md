@@ -76,7 +76,7 @@ The tests (`backend/tests/test_overview.py`) replace the NASA services with smal
 
 | Part | Host | Notes |
 |---|---|---|
-| Frontend | Vercel, root directory `frontend/` | `VITE_API_BASE_URL=https://hulaw-prototype-nasa.onrender.com`. The root `vercel.json` is not used with this root directory. |
+| Frontend | Vercel (`https://hulaw.earth`), root directory `frontend/` | `VITE_API_BASE_URL=https://hulaw-prototype-nasa.onrender.com`. The root `vercel.json` is not used with this root directory. |
 | Backend | Render (Docker, `backend/Dockerfile`, Python 3.14) | Health check path `/api/health`. Azure OpenAI variables are set in the Render dashboard. |
 
 On Render's free plan the instance sleeps when idle and loses its cache. `.github/workflows/keep-warm.yml` pings `/api/health` every 10 minutes to prevent that. On a paid plan, point `HULAW_CACHE_DIR` at a persistent disk.
