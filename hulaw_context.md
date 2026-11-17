@@ -1,14 +1,46 @@
 HULAW — MASTER PROJECT CONTEXT & AI HANDOFF
-Version: 1.0 | Prepared: 13 November 2026
+Version: 1.1 | Prepared: 13 November 2026 | Updated to match the code: 17 November 2026
 Document type: Plain-text project brief, team reference, and reusable AI prompt context
-Status: PROJECT CONCEPT / PROPOSED IMPLEMENTATION — not a declaration of completed functionality
+Status: WORKING PROTOTYPE (see section 01A) plus concept and proposals for later phases. Sections other than 01A, 09A, 10A, 12 and 13 still describe the concept; they are not a declaration of completed functionality.
 
 ======================================================================
 01. HOW TO USE THIS DOCUMENT
 ======================================================================
 This file is the shared source of context for Hulaw. Teammates can paste its content into an AI assistant before asking for implementation help, or keep it in the repository as PROJECT_CONTEXT.txt. Sections marked "DECIDED DIRECTION" record the concept selected in the discussion; sections marked "PROPOSED" are recommendations that the team can change; items marked "TO VALIDATE" are deliberately not asserted as finished or scientifically proven.
 
-IMPORTANT: Hulaw has been selected over two other project ideas (Urban Heat Intelligence and EarthPulse). No specific production implementation, team roles, user interviews, deployed website, or trained prediction model has been confirmed. AI assistants must not claim these exist without new evidence.
+IMPORTANT: Hulaw has been selected over two other project ideas (Urban Heat Intelligence and EarthPulse). A working prototype exists and is deployed (section 01A). No team roles, user interviews, scientific validation, or trained prediction model have been confirmed. AI assistants must not claim these exist without new evidence.
+
+======================================================================
+01A. CURRENT PROTOTYPE — WHAT THE CODE DOES (AS OF 17 NOVEMBER 2026)
+======================================================================
+This section is the authoritative summary of what is built. API.md has the full endpoint reference; README.md has setup and configuration.
+
+DATA ACTUALLY USED BY THE APP (all read at ONE point, not an area average):
+- Rainfall: NASA POWER daily precipitation, parameter PRECTOTCORR (NOT GPM IMERG). Summed per month (complete months only). Anomaly = monthly total minus the mean of the same calendar month over the baseline years (default: the 5 years before the 12-month period; 3-10 years allowed; at least 3 complete years needed).
+- Soil: NASA POWER GWETTOP surface soil wetness (model-based, 0-1 fraction; NOT a SMAP retrieval). Monthly mean (at least 20 valid days), expressed as an empirical percentile among the same calendar month over the 20 years before the period (at least 10 needed).
+- Vegetation: NASA MODIS MOD13Q1 NDVI (16-day, 250 m) from the ORNL DAAC subset API, centre pixel, strict quality filter. Monthly mean minus the same calendar month over the baseline years (at least 3 needed).
+- Experimental combined index (-1 wetter to +1 drier): mean of the available clipped scores — rainfall -anomaly/90, soil (50 - percentile)/40, vegetation -anomaly/0.2. Missing indicators are skipped, never treated as zero. Status thresholds: rainfall +/-30 mm; soil percentile <25 / >75; NDVI anomaly +/-0.05. These thresholds and the index are NOT validated and NOT an official classification.
+
+SMAP: the backend has separate endpoints that read NASA SMAP SPL3SMP_E version 006 HDF5 files (nearest AM/PM cell within 20 km, quality flag 0 or 8). Files come from backend/data/smap/ or an optional background download (HULAW_SMAP_ON_DEMAND with an Earthdata login). There is no SMAP baseline or anomaly, and the frontend does not chart SMAP; the AI assistant can query it.
+
+FRONTEND (React + TypeScript + Vite, CesiumJS globe, Recharts):
+- Pages (hash routes): Map explorer (default), Dashboard, Analytics, Reports, Timelines.
+- Default location: Central Luzon reference point (latitude 15.7, longitude 120.9). Selecting a Philippine region, province or city/municipality (PSGC boundaries) sends that area's centre point.
+- Every page reads GET /api/overview. The map colours every visible boundary from POST /api/overview/areas (rainfall and soil only).
+- "Period and baseline" controls choose the last month of the 12-month window and the baseline years.
+- Drought development & recovery timeline, rule-based text summary, CSV/JSON export and print-to-PDF reports.
+- Other countries on the globe use an ILLUSTRATIVE placeholder profile, not real data.
+- "Hulaworld" AI assistant with a mascot whose mood follows the combined index.
+
+BACKEND (Python 3.14, FastAPI):
+- Server-side two-tier cache (memory + JSON files) for NASA POWER, MODIS and overview results.
+- AI assistant: Azure OpenAI Responses API with three tools (rainfall timeline, SMAP history, MODIS history), only when a location is supplied.
+- Offline tests in backend/tests/ with fake NASA services.
+
+DEPLOYMENT:
+- Frontend on Vercel (the backend allows the hulaw.earth and hulaw.vercel.app origins by default); backend on Render (Docker) at hulaw-prototype-nasa.onrender.com, kept awake by a GitHub Actions ping.
+
+NOT BUILT: GPM IMERG, GRACE-FO, ECOSTRESS, SMAP baseline/anomaly, area-averaged values, agricultural exposure overlay, gridded raster layers, region comparison, alerts, predictive models, PostgreSQL/PostGIS.
 
 ======================================================================
 02. EXECUTIVE SUMMARY
@@ -153,6 +185,8 @@ B. OPTIONAL / LATER-PHASE DATASETS:
    - Crop calendars and information on global agricultural practices where available.
    - Optional population data for contextual analysis; avoid presenting population overlap as direct harm evidence.
 
+PROTOTYPE NOTE: The built prototype uses NASA POWER PRECTOTCORR instead of GPM IMERG for rainfall, and NASA POWER GWETTOP (model-based) instead of SMAP for the soil indicator in the main overview. SMAP SPL3SMP_E v006 is available only through separate point endpoints. MODIS MOD13Q1 via ORNL DAAC is used for vegetation. See section 01A.
+
 DATA MODEL RULE:
 Every measure should record dataset/product, variable, unit, coverage, acquisition/processing timestamp, spatial resolution or scale, quality mask, baseline period, and missing-data status.
 
@@ -255,6 +289,15 @@ IMPORTANT ARCHITECTURAL DECISION:
 Prefer precomputed monthly anomalies and cached spatial subsets for the demonstration. Do not fetch and process multi-year global raw satellite rasters inside each user's browser request.
 
 ======================================================================
+09A. STACK AS BUILT
+======================================================================
+FRONTEND: React 18 + TypeScript + Vite; CesiumJS (vite-plugin-cesium) with Esri World Imagery; Recharts; plain CSS (src/styles.css); hash routing; no TanStack Query (a small in-memory cache in src/hooks/useOverview.ts).
+BACKEND: Python 3.14 + FastAPI + Pydantic; httpx (one pooled async client); h5py + NumPy for SMAP HDF5; earthaccess for SMAP downloads; openai SDK for Azure OpenAI. Not used: pandas, xarray, rasterio, GeoPandas, Dask, Celery.
+STORAGE: no database. JSON file cache (backend/data/cache/api/ or HULAW_CACHE_DIR) plus an in-memory LRU; SMAP HDF5 files in backend/data/smap/.
+DATA ACCESS: NASA POWER daily point API; ORNL DAAC MODIS REST API; NASA Earthdata (earthaccess) for SMAP. No Earth Engine, AppEEARS or Giovanni.
+HOSTING: Vercel (frontend) and Render Docker (backend); GitHub Actions keep-warm ping. No CI test workflow yet.
+
+======================================================================
 10. PROPOSED SYSTEM ARCHITECTURE
 ======================================================================
 DATA SOURCES
@@ -283,7 +326,36 @@ API (FastAPI)
 CLIENT (React + CesiumJS + charts)
   Globe/map + region selector + timeline + indicator panels + export
 
-PROPOSED REPOSITORY ORGANIZATION:
+ACTUAL ARCHITECTURE (PROTOTYPE):
+  NASA POWER (PRECTOTCORR, GWETTOP) + ORNL DAAC MODIS MOD13Q1 (+ SMAP files)
+         |  fetched on request, cached on the server (memory + JSON files)
+         v
+  FastAPI (backend/app): /api/overview, /api/overview/areas, rainfall/SMAP/MODIS
+  point endpoints, /api/hulaworld/chat (Azure OpenAI)
+         |
+         v
+  React + CesiumJS + Recharts (frontend/src): map, dashboard, analytics,
+  reports, timelines, assistant
+
+ACTUAL REPOSITORY ORGANIZATION:
+  README.md, API.md, hulaw_context.md, vercel.json, requirements*.txt
+  .github/workflows/keep-warm.yml
+  backend/
+    Dockerfile, requirements.txt
+    app/main.py
+    app/api/        (route modules)
+    app/schemas/    (Pydantic response models)
+    app/services/   (NASA POWER, MODIS, SMAP, overview, cache, HTTP client)
+    app/ai/         (Hulaworld prompts, tools, tool executor, service)
+    scripts/        (SMAP download/inspection and Azure test scripts)
+    tests/          (test_overview.py, offline)
+    data/           (cache/ and smap/, git-ignored)
+  frontend/
+    src/components, src/views, src/hooks, src/services, src/types,
+    src/utils, src/data
+    public/         (logo, mascot images, Philippines outline, countries.geojson)
+
+ORIGINAL PROPOSED REPOSITORY ORGANIZATION (not followed exactly):
 Hulaw/
   README.md
   PROJECT_CONTEXT.txt
@@ -355,34 +427,46 @@ F. AGRICULTURAL EXPOSURE
 - Describe overlap as "agricultural area exposed to observed anomaly" rather than confirmed crop damage.
 - Report area and the source/resolution/accuracy of the land-cover dataset.
 
-G. COMPOSITE INDEX (DEFERRED UNTIL VALIDATED)
+G. COMPOSITE INDEX (EXPERIMENTAL VERSION BUILT; NOT VALIDATED)
+- The prototype has an experimental -1..+1 combined index (section 01A). It is labeled experimental in the API and UI and has not been validated.
 - If scoring is attempted, document normalization, directionality, weights, thresholds, missing-data policy and scientific rationale.
 - Validate against independent drought products and global observations.
 - Include an "insufficient data" state instead of silently imputing everything.
 - Avoid presenting a proprietary, arbitrary 0–100 number as authoritative drought severity.
 
 ======================================================================
-12. EXAMPLE API CONTRACT (DESIGN SKETCH, NOT IMPLEMENTED)
+12. API (IMPLEMENTED) AND FURTHER DESIGN IDEAS
 ======================================================================
-GET /api/health
-  Returns service status.
-GET /api/areas?query=<name>
-  Searches supported geographies.
-GET /api/areas/{area_id}
-  Returns geometry, name, and location metadata.
-GET /api/indicators?area_id=...&start=YYYY-MM&end=YYYY-MM
-  Returns aligned rainfall, soil moisture and NDVI/EVI series, units,
-  baselines, observation dates, quality flags, data source and gap info.
-GET /api/layers?date=YYYY-MM&indicator=rainfall_anomaly
-  Returns layer metadata and a renderable raster/tile reference.
-GET /api/assessment?area_id=...&start=...&end=...
-  Returns transparent, rule-grounded summary and limitations.
-GET /api/exposure?area_id=...&date=...
-  Returns cropland overlap only if valid GIS coverage exists.
-POST /api/reports
-  Proposed future export of current selection, with metadata and caveats.
+IMPLEMENTED (full reference in API.md; all point-based, by latitude/longitude):
+GET  /                                   Service information.
+GET  /api/health                         Service status.
+GET  /api/indicators                     Descriptions of the three overview indicators.
+GET  /api/overview                       12 completed months for one point: rainfall,
+                                         soil wetness, NDVI vs baselines, experimental
+                                         combined index, sources, warnings, mascot mood.
+                                         Optional end_month, baseline_start/end, refresh.
+POST /api/overview/areas                 Rainfall anomaly + soil percentile per month
+                                         for up to 150 points (map colours).
+GET  /api/precipitation                  Daily NASA POWER rainfall (<= 31 days).
+GET  /api/analysis/rainfall/monthly      Monthly total.
+GET  /api/analysis/rainfall/baseline     Same-month mean over <= 10 years.
+GET  /api/analysis/rainfall/anomaly      Monthly anomaly.
+GET  /api/analysis/rainfall/timeline     Monthly anomaly series within one year.
+GET  /api/soil-moisture                  One SMAP SPL3SMP_E observation.
+GET  /api/soil-moisture/history          SMAP observations (<= 14 days).
+GET  /api/vegetation/history             MODIS NDVI/EVI (<= 121 days, <= 10 composites).
+POST /api/hulaworld/chat                 AI assistant reply (Azure OpenAI).
+Report export (CSV/JSON/print) is done in the frontend, not by the API.
 
-EXAMPLE INDICATOR RECORD FIELDS:
+NOT IMPLEMENTED (earlier design sketch, kept as ideas):
+GET /api/areas?query=<name>, GET /api/areas/{area_id}   (area search/geometry; the
+  frontend loads PSGC boundaries directly from GitHub)
+GET /api/layers?date=YYYY-MM&indicator=...               (raster/tile layers)
+GET /api/assessment?area_id=...                           (server-side summary)
+GET /api/exposure?area_id=...&date=...                   (cropland overlap)
+POST /api/reports                                         (server-side export)
+
+EXAMPLE INDICATOR RECORD FIELDS (design guidance):
   area_id, date, metric, value, unit, baseline_value, anomaly,
   baseline_period, dataset, product_version, source_url,
   native_resolution, computed_at, quality_status, notes
@@ -393,6 +477,13 @@ no response should imply fresher data than the source's actual timestamp.
 ======================================================================
 13. MVP SCOPE / BUILD ORDER
 ======================================================================
+PROGRESS (17 November 2026):
+- Phase 0: partly done — reference point in Central Luzon chosen; products chosen (NASA POWER, MODIS MOD13Q1, SMAP SPL3SMP_E v006); default baselines defined. Historical case study and validation data not yet chosen.
+- Phase 1: done for one point at a time (see 01A).
+- Phase 2: done — map/globe, charts, period controls, development & recovery timeline, source labels, warnings and generated-at timestamps.
+- Phase 3: partly done — exportable summary (CSV/JSON/print) exists; agricultural overlay and validation do not.
+- Phase 4: not started, except the experimental combined index.
+
 PHASE 0 — RESEARCH AND SCIENTIFIC FEASIBILITY
 - Choose Philippine pilot area and historical study case.
 - Confirm exact GPM, SMAP and MODIS products, dates, access methods, licenses, availability, and quality flags.
@@ -523,15 +614,16 @@ MITIGATION: Label demonstrations conspicuously and separate them from production
 ======================================================================
 18. OPEN DECISIONS FOR THE TEAM
 ======================================================================
-[ ] Select pilot Philippine region and relevant historical drought period.
+Status as of 17 November 2026: [x] = decided in the code; [~] = partly decided.
+[~] Select pilot Philippine region and relevant historical drought period. (Default reference point: Central Luzon, 15.7 N 120.9 E; no historical drought period chosen.)
 [ ] Specify target primary user and their highest-priority decision.
 [ ] Assign project owner, backend, frontend, geospatial/data and documentation/testing responsibilities.
-[ ] Confirm selected MODIS, SMAP and IMERG product IDs and versions.
-[ ] Decide Earthdata/AppEEARS/Earth Engine data retrieval path after access tests.
-[ ] Define precipitation, soil moisture and vegetation anomaly baselines.
-[ ] Decide whether CesiumJS 3D view is an MVP requirement or a follow-on feature.
+[~] Confirm selected MODIS, SMAP and IMERG product IDs and versions. (MODIS MOD13Q1 and SMAP SPL3SMP_E v006 in use; rainfall uses NASA POWER PRECTOTCORR instead of IMERG.)
+[x] Decide Earthdata/AppEEARS/Earth Engine data retrieval path after access tests. (NASA POWER API, ORNL DAAC MODIS API, earthaccess for SMAP.)
+[~] Define precipitation, soil moisture and vegetation anomaly baselines. (Defaults: 5 years before the period for rainfall/NDVI, 20 years for soil percentile; not validated.)
+[x] Decide whether CesiumJS 3D view is an MVP requirement or a follow-on feature. (CesiumJS is used.)
 [ ] Source and evaluate agricultural land-use data suitable for the pilot.
-[ ] Choose hosting approach and cost limits.
+[~] Choose hosting approach and cost limits. (Vercel + Render free plan; cost limits not set.)
 [ ] Decide acceptable update frequency and how data freshness is displayed.
 [ ] Select comparison/reference data for scientific validation.
 [ ] Validate project name, logo, domain and legal/trademark availability before public launch.
@@ -544,11 +636,11 @@ You are assisting with the Hulaw project. Treat this document as the project con
 
 Project: Hulaw — a proposed global drought intelligence and geospatial decision-support web app, with a Philippines-focused demo.
 
-Purpose: integrate GPM/IMERG precipitation, SMAP near-surface soil moisture, and MODIS vegetation indicators, with optional GRACE-FO regional water storage and ECOSTRESS context, to explain drought-related conditions over time and potential agricultural exposure.
+Purpose: integrate rainfall, soil moisture and vegetation indicators, with optional GRACE-FO regional water storage and ECOSTRESS context, to explain drought-related conditions over time and potential agricultural exposure. The current prototype uses NASA POWER PRECTOTCORR rainfall, NASA POWER GWETTOP surface soil wetness (model-based, not SMAP) and MODIS MOD13Q1 NDVI, read at one point and compared with same-month baselines; SMAP SPL3SMP_E v006 is available only through separate point endpoints. GPM/IMERG is a possible later replacement for rainfall.
 
 Distinctive concept: the evidence-linked Drought Development & Recovery Timeline, not merely a static drought severity map. Explain multi-indicator patterns, baseline deviations, temporal change, uncertainty and source details. Do NOT assert a rigid order of drought stages, automatic causation, or scientifically unverified composite scores.
 
-Suggested stack: React + TypeScript + CesiumJS frontend; Python/FastAPI backend; xarray/pandas/NumPy/rasterio/GeoPandas data processing; optional PostgreSQL/PostGIS; precomputed rasters/tiles and time-series caching. All choices remain proposed until the team confirms them.
+Stack in use: React + TypeScript + Vite + CesiumJS + Recharts frontend; Python 3.14 + FastAPI backend with httpx, h5py/NumPy and a JSON file cache; Azure OpenAI for the assistant; Vercel + Render hosting. No database. See section 01A and API.md for what is built.
 
 Implementation priorities: choose a real pilot area and period, verify actual NASA products, prepare validated example data, produce a traceable location-based timeline, then build map and chart workflows and an optional agricultural overlay. Favor a trustworthy focused MVP over broad, superficial features.
 
@@ -557,7 +649,7 @@ Rules for all answers:
 2. Never invent satellite measurements, citations, real-time access, model accuracy, or external partnerships.
 3. Preserve source metadata, units, dates, spatial scale, baseline, quality flags and missing observations.
 4. Avoid describing NDVI decline as proof of drought, GRACE-FO as field-level groundwater measurement, or Hulaw as an official warning service.
-5. When writing code, specify each file's path within the proposed repository structure.
+5. When writing code, specify each file's path within the actual repository structure (section 10).
 6. Provide practical, modular, testable code and explain dependencies and assumptions.
 7. When recommending APIs, versions, SDKs or datasets, verify against current official documentation.
 8. If uncertainty remains, identify what needs testing or domain validation.
@@ -569,11 +661,14 @@ When asked to create a feature, begin by connecting it to Hulaw's main workflow;
 ======================================================================
 20. SHORT CONTEXT PROMPT (FOR QUICK SHARING)
 ======================================================================
-Hulaw is our selected environmental technology project: a global drought intelligence platform with a Philippines-focused demo. It uses NASA GPM/IMERG rainfall, SMAP surface soil moisture, and MODIS NDVI/EVI vegetation data to help users examine unusual dryness, seasonal anomalies and drought development/recovery over time. GRACE-FO regional water storage, ECOSTRESS and cropland overlays are optional later additions. Its main proposed innovation is an explainable Drought Development & Recovery Timeline that aligns indicators and communicates evidence, uncertainty, location, source dates and possible agricultural exposure—not another static drought map. Primary users include agriculture offices, LGUs/DRRM offices and water managers. Suggested stack: React/TypeScript/CesiumJS + Python/FastAPI + scientific Python data processing + optional PostgreSQL/PostGIS. Focus first on one well-validated Philippine case study; never invent satellite data, official warnings or predictive accuracy. All functionality and stack choices are proposals, not yet implemented.
+Hulaw is our selected environmental technology project: a global drought intelligence platform with a Philippines-focused demo. The working prototype uses NASA POWER rainfall (PRECTOTCORR), NASA POWER surface soil wetness (GWETTOP, model-based, not SMAP) and MODIS MOD13Q1 NDVI at one point, compared with same-month baselines, plus an experimental combined index, to help users examine unusual dryness, seasonal anomalies and drought development/recovery over time. SMAP point data is available through separate endpoints; GPM/IMERG is not used yet. GRACE-FO regional water storage, ECOSTRESS and cropland overlays are optional later additions. Its main proposed innovation is an explainable Drought Development & Recovery Timeline that aligns indicators and communicates evidence, uncertainty, location, source dates and possible agricultural exposure—not another static drought map. Primary users include agriculture offices, LGUs/DRRM offices and water managers. Stack: React/TypeScript/Vite/CesiumJS/Recharts + Python/FastAPI, deployed on Vercel and Render, with an Azure OpenAI assistant (Hulaworld). Focus first on one well-validated Philippine case study; never invent satellite data, official warnings or predictive accuracy. Features beyond the prototype in section 01A remain proposals.
 
 ======================================================================
 21. SELECTED SOURCES AND REFERENCE LINKS
 ======================================================================
+NASA POWER (used): https://power.larc.nasa.gov/
+ORNL DAAC MODIS subset API (used): https://modis.ornl.gov/rst/api/v1/
+NASA SMAP SPL3SMP_E (used): https://nsidc.org/data/spl3smp_e
 NASA IMERG overview: https://gpm.nasa.gov/data/imerg
 NASA GPM data directory: https://gpm.nasa.gov/data/directory
 NASA Earthdata: https://www.earthdata.nasa.gov/
@@ -591,5 +686,5 @@ Google Earth Engine: https://earthengine.google.com/
 Source note: URLs are supporting entry points, not a complete peer-reviewed methodology. Always consult the exact product's current official documentation, DOI, algorithm description and terms before implementing.
 
 ======================================================================
-END OF DROUGHTLENS MASTER PROJECT CONTEXT
+END OF HULAW MASTER PROJECT CONTEXT
 ======================================================================
